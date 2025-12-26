@@ -1,0 +1,286 @@
+from ipykernel.kernelbase import Kernel
+import subprocess
+import os
+import threading
+import queue
+import time
+import uuid
+import socket
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib.parse
+import shutil
+import tempfile
+
+# ==========================================
+# 1. Configuration & Templates
+# ==========================================
+
+C_BOOTSTRAP_CODE = r"""
+#include <stdio.h>
+#include <stdlib.h>
+#include <windows.h> 
+
+/* 초기화: 버퍼링 끄기 및 한글 설정 */
+void __attribute__((constructor)) _init_jupyter() { 
+    setvbuf(stdout, NULL, _IONBF, 0); 
+    setvbuf(stderr, NULL, _IONBF, 0);
+    SetConsoleOutputCP(65001); 
+}
+
+/* 입력 트리거 함수: 파이썬에게 입력창 띄우라고 신호 보냄 */
+static void _trigger_input() {
+    printf("<<__REQ__>>");
+    fflush(stdout);
+}
+
+/* 핵심: 주요 입력 함수 매크로 오버라이딩 (Hooking) 
+   - 원래 함수가 실행되기 전에 _trigger_input()을 먼저 실행함
+*/
+
+// 1. scanf
+#define scanf(...) (_trigger_input(), scanf(__VA_ARGS__))
+
+// 2. getchar: 문자 하나 입력
+#define getchar() (_trigger_input(), getchar())
+
+// 3. fgets: 파일 입출력이 아닌 stdin(표준 입력)일 때만 트리거
+#define fgets(s, n, stream) ((stream) == stdin ? _trigger_input() : (void)0, fgets(s, n, stream))
+
+// 4. gets: 보안상 위험하지만 교육용으로 필요하다면 사용 (C11에서는 삭제됨, 경고 뜰 수 있음)
+// #define gets(s) (_trigger_input(), gets(s)) 
+"""
+
+INPUT_HTML_TEMPLATE = """
+<div class="lm-Widget jp-Stdin jp-OutputArea-output">
+    <div class="lm-Widget jp-InputArea jp-Stdin-inputWrapper">
+        <input type="text" id="box-{req_id}" class="jp-Stdin-input" autocomplete="off" placeholder="">
+    </div>
+    <script>
+        (function() {{
+            var box = document.getElementById("box-{req_id}");
+            setTimeout(function() {{ box.focus(); }}, 50);
+            box.addEventListener("keydown", function(e) {{
+                if (e.key === "Enter") {{
+                    e.preventDefault();
+                    var val = box.value;
+                    box.disabled = true;
+                    fetch("http://localhost:{port}", {{
+                        method: "POST", headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
+                        body: "id={req_id}&value=" + encodeURIComponent(val)
+                    }}).catch(console.error);
+                }}
+            }});
+        }})();
+    </script>
+</div>
+"""
+
+# ==========================================
+# 2. Input Server Manager
+# ==========================================
+
+class ServerState:
+    data = {}
+    event = threading.Event()
+
+class RequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            parsed = urllib.parse.parse_qs(post_data)
+            req_id = parsed.get('id', [None])[0]
+            value = parsed.get('value', [''])[0]
+            if req_id:
+                ServerState.data[req_id] = value
+                ServerState.event.set()
+            self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+        except: self.send_response(500)
+    def log_message(self, format, *args): pass 
+
+class InputServer:
+    def __init__(self):
+        self.port = self._find_free_port()
+        self.server = HTTPServer(('localhost', self.port), RequestHandler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def _find_free_port(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', 0))
+            return s.getsockname()[1]
+
+    def wait_for_input(self, req_id):
+        ServerState.event.clear()
+        while True:
+            is_set = ServerState.event.wait(timeout=0.1)
+            if is_set and req_id in ServerState.data:
+                return ServerState.data.pop(req_id)
+            if self._check_interrupt(): return None
+        return None
+    
+    def _check_interrupt(self): return False # Placeholder
+    def get_port(self): return self.port
+
+
+# ==========================================
+# 3. Main Kernel Class
+# ==========================================
+
+class SimpleCKernel(Kernel):
+    implementation = 'SimpleCKernel'
+    implementation_version = '1.0'
+    language = 'c'
+    language_version = 'C11'
+    banner = "Simple C Kernel v1.0"
+    language_info = {'name': 'c', 'mimetype': 'text/x-csrc', 'file_extension': '.c'}
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.input_server = InputServer()
+        self.cell_output_buffer = ""
+
+    def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=True):
+        self.cell_output_buffer = ""
+        
+        # 임시 폴더 생성 (여기에 소스와 실행파일을 만듭니다)
+        self.build_dir = tempfile.mkdtemp()
+        src_file = os.path.join(self.build_dir, 'source.c')
+        exe_file = os.path.join(self.build_dir, 'source.exe')
+
+        # 컴파일 시 임시 경로 사용
+        if not self._compile_code(code, src_file, exe_file):
+            self._cleanup() # 실패해도 정리
+            return {'status': 'ok', 'execution_count': self.execution_count, 'payload': [], 'user_expressions': {}}
+
+        # 실행 시 임시 경로 사용
+        self._run_process(exe_file)
+        
+        # 정리 (임시 폴더 전체 삭제)
+        self._cleanup()
+
+        return {'status': 'ok', 'execution_count': self.execution_count, 'payload': [], 'user_expressions': {}}
+
+    def _compile_code(self, code, src_file, exe_file):
+        full_code = C_BOOTSTRAP_CODE + "\n" + code
+        with open(src_file, 'w', encoding='utf-8') as f:
+            f.write(full_code)
+
+        try:
+            # cwd(현재 작업 경로)를 임시 폴더로 지정하여 컴파일
+            subprocess.check_output(
+                ['gcc', src_file, '-o', exe_file], 
+                stderr=subprocess.STDOUT, 
+                encoding='utf-8',
+                cwd=self.build_dir 
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            self._print_stream(f"Compile Error:\n{e.output}")
+            return False
+        except FileNotFoundError:
+            self._print_stream("Error: GCC not found. Please install MinGW or GCC.")
+            return False
+
+    def _run_process(self, exe_file):
+        try:
+            # 파일이 없으면 중단
+            if not os.path.exists(exe_file): return
+
+            process = subprocess.Popen(
+                [exe_file],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=0,
+                cwd=self.build_dir
+            )
+            
+            q = queue.Queue()
+            def reader_thread(proc, out_q):
+                while True:
+                    char = proc.stdout.read(1)
+                    if not char: break
+                    out_q.put(char)
+                proc.stdout.close()
+            
+            t = threading.Thread(target=reader_thread, args=(process, q), daemon=True)
+            t.start()
+
+            output_chunk = ""
+            req_marker = "<<__REQ__>>"
+
+            while t.is_alive() or not q.empty():
+                try:
+                    char = q.get(timeout=0.05)
+                    output_chunk += char
+                    
+                    if req_marker in output_chunk:
+                        pre_text = output_chunk.replace(req_marker, "")
+                        self._print_stream(pre_text)
+                        output_chunk = ""
+                        
+                        user_input = self._handle_input_request()
+                        
+                        try:
+                            process.stdin.write(user_input + "\n")
+                            process.stdin.flush()
+                        except OSError: pass
+
+                    elif char == '\n' or len(output_chunk) > 200:
+                        self._print_stream(output_chunk)
+                        output_chunk = ""
+                        
+                except queue.Empty: continue
+
+            if output_chunk: self._print_stream(output_chunk)
+
+            # 파이프 명시적 닫기 (Cleanup을 돕기 위함)
+            try:
+                process.stdin.close()
+                if process.stdout: process.stdout.close()
+            except: pass
+
+            if process.poll() is None:
+                process.terminate()
+            process.wait()
+
+        except Exception as e:
+            self._print_stream(f"\nRuntime Error: {str(e)}")
+
+    def _handle_input_request(self):
+        req_id = str(uuid.uuid4())
+        self._display_html_input(req_id)
+        
+        user_input = self.input_server.wait_for_input(req_id)
+        if user_input is None: user_input = "0"
+
+        self.send_response(self.iopub_socket, 'clear_output', {'wait': True})
+        
+        prefix = "\n" if self.cell_output_buffer and not self.cell_output_buffer.endswith('\n') else ""
+        formatted_input = f"{prefix}{user_input}\n"
+        
+        self._print_stream(formatted_input)
+        
+        return user_input
+
+    def _display_html_input(self, req_id):
+        html_content = INPUT_HTML_TEMPLATE.format(req_id=req_id, port=self.input_server.get_port())
+        self.send_response(self.iopub_socket, 'display_data', {'data': {'text/html': html_content}, 'metadata': {}})
+
+    def _print_stream(self, text):
+        self.cell_output_buffer += text
+        self.send_response(self.iopub_socket, 'stream', {'name': 'stdout', 'text': text})
+
+    def _cleanup(self):
+        """임시 폴더 전체 삭제 (파일 잠금 시 에러 무시)"""
+        if hasattr(self, 'build_dir') and os.path.exists(self.build_dir):
+            # ignore_errors=True: 파일이 잠겨있어도 에러 없이 넘어감 (OS가 나중에 처리)
+            shutil.rmtree(self.build_dir, ignore_errors=True)
+
+if __name__ == '__main__':
+    from ipykernel.kernelapp import IPKernelApp
+    IPKernelApp.launch_instance(kernel_class=SimpleCKernel)

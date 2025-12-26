@@ -1,0 +1,11 @@
+{
+ "argv": [
+  "python",
+  "{resource_dir}/kernel.py",
+  "-f",
+  "{connection_file}"
+ ],
+ "display_name": "Simple C Kernel",
+ "language": "c",
+ "interrupt_mode": "signal"
+}
