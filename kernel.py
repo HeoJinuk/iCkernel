@@ -93,6 +93,17 @@ class ServerState:
     event = threading.Event()
 
 class RequestHandler(BaseHTTPRequestHandler):
+    def _set_headers(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Access-Control-Allow-Origin', '*') # 모든 출처 허용
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def do_OPTIONS(self):
+        self._set_headers()
+
     def do_POST(self):
         try:
             content_length = int(self.headers.get('Content-Length', 0))
@@ -103,8 +114,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             if req_id:
                 ServerState.data[req_id] = value
                 ServerState.event.set()
-            self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
-        except: self.send_response(500)
+            self._set_headers()
+            self.wfile.write(b"OK")
+        except: 
+            self.send_response(500)
+            self.end_headers()
     def log_message(self, format, *args): pass 
 
 class InputServer:
