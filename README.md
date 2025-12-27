@@ -1,12 +1,12 @@
-# Simple C Kernel for Jupyter
+# iCkernel (Interactive C Kernel) for Jupyter
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-**Jupyter Notebook에서 C언어를 완벽하게 학습할 수 있는 커널입니다.**
+**Jupyter Notebook에서 C언어를 실행할 수 있는 커널입니다.**
 
-기존 C 커널들은 `scanf` 입력이 안 되거나, 한글이 깨지고, 설치가 복잡하다는 문제가 있었습니다.
-**Simple C Kernel**은 이 모든 문제를 해결했습니다. OS에 상관없이 설치 한 번으로 실습 환경을 구축하세요.
+기존 C 커널들은 `scanf` 입력이 안 되거나, 한글이 깨지고, 설치가 복잡하다는 문제가 있었습니다.  
+**iCkernel**은 이 모든 문제를 해결했습니다. OS에 상관없이 설치 한 번으로 실습 환경을 구축하세요.
 
 ---
 
@@ -81,7 +81,7 @@ sudo apt install build-essential
 pip install .
 
 # 2. 커널 등록 (자동 설치 스크립트)
-install-c-kernel
+install-ic-kernel
 ```
 
 "✅ 설치가 완료되었습니다!" 메시지가 나오면 모든 준비가 끝났습니다.
@@ -91,7 +91,7 @@ install-c-kernel
 ## 사용 방법
 
 1. 터미널에 `jupyter notebook`을 입력하여 실행합니다.
-2. 우측 상단 **[New]** 버튼을 누르고 **Simple C Kernel**을 선택합니다.
+2. 우측 상단 **[New]** 버튼을 누르고 **Interactive C Kernel**을 선택합니다.
 3. 이제 C 코드를 작성하고 실행(`Shift + Enter`)하세요!
 
 ### 예제 코드 따라해보기

@@ -7,8 +7,8 @@ from jupyter_client.kernelspec import KernelSpecManager
 def main():
     # 1. kernel.json 내용 정의
     kernel_json = {
-        "argv": [sys.executable, "-m", "simple_c_kernel.kernel", "-f", "{connection_file}"],
-        "display_name": "Simple C Kernel",
+        "argv": [sys.executable, "-m", "ic_kernel.kernel", "-f", "{connection_file}"],
+        "display_name": "Interactive C Kernel",
         "language": "c",
         "interrupt_mode": "signal"
     }
@@ -25,12 +25,12 @@ def main():
         kernel_spec_manager = KernelSpecManager()
         dest_dir = kernel_spec_manager.install_kernel_spec(
             source_dir=td,
-            kernel_name="simple_c_kernel",
+            kernel_name="ic_kernel",
             user=True,
             replace=True
         )
 
-    print(f"✅ Simple C Kernel 설치 완료! (위치: {dest_dir})")
+    print(f"✅ Interactive C Kernel 설치 완료! (위치: {dest_dir})")
 
 if __name__ == '__main__':
     main()

@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "simple-c-kernel-test"
+name = "ic-kernel"
 version = "0.1.0"
-description = "Simple C Kernel for Jupyter"
+description = "Interactive C Kernel for Jupyter"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -14,4 +14,4 @@ dependencies = [
 ]
 
 [project.scripts]
-install-c-kernel = "simple_c_kernel.install:main"
+install-ic-kernel = "ic_kernel.install:main"
