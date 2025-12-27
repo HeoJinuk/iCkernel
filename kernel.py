@@ -32,6 +32,7 @@ C_BOOTSTRAP_CODE = r"""
 void __attribute__((constructor)) _init_jupyter() { 
     setvbuf(stdout, NULL, _IONBF, 0); 
     setvbuf(stderr, NULL, _IONBF, 0);
+    setvbuf(stdin,  NULL, _IONBF, 0);
     _init_os();
 }
 
