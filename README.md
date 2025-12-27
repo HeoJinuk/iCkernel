@@ -10,7 +10,7 @@
 
 ---
 
-## ✨ 주요 기능
+## 주요 기능
 
 * **크로스 플랫폼:** Windows, macOS, Linux(Ubuntu) 등 어디서든 동작합니다.
 * **Jupyter에서 입력 지원:** `scanf`, `fgets` 실행 시 하단에 **입력창**이 즉시 뜹니다. (터미널과 동일한 경험)
@@ -19,9 +19,10 @@
 * **매직 커맨드:** `//%cflags -lm` 등을 사용하여 수학 라이브러리나 컴파일 옵션을 자유롭게 추가할 수 있습니다.
 ---
 
-## 🛠️ 설치 가이드 (Installation)
+## 설치 가이드 (Installation)
 
-이 커널을 사용하려면 **Python**과 **C 컴파일러(GCC)**가 필요합니다.
+이 커널은 개인 PC(로컬) 사용만을 지원합니다.  
+이 커널을 사용하려면 **Python**과 **C 컴파일러(GCC)** 가 필요합니다.
 
 ### 1단계: Python 설치 확인
 
@@ -42,7 +43,7 @@ python --version
 
 #### Windows 사용자 (MinGW-w64)
 
-1. **[WinLibs 다운로드 링크](https://winlibs.com/#download-release)**로 이동합니다.
+1. **[WinLibs 다운로드 링크](https://winlibs.com/#download-release)** 로 이동합니다.
 2. 최신 버전의 **Zip archive** (UCRT runtime)을 다운로드합니다.
 3. 다운로드한 압축 파일을 `C:\` 드라이브 최상단에 풉니다. (예: `C:\mingw64`)
 4. **환경 변수 설정 (필수):**
