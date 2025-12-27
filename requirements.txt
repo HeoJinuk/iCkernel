@@ -1,2 +1,0 @@
-jupyter
-ipykernel>=6.0.0

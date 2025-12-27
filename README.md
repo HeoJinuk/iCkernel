@@ -78,10 +78,10 @@ sudo apt install build-essential
 
 ```bash
 # 1. Jupyter 및 필수 라이브러리 설치
-pip install -r requirements.txt
+pip install .
 
 # 2. 커널 등록 (자동 설치 스크립트)
-python install.py
+install-c-kernel
 ```
 
 "✅ 설치가 완료되었습니다!" 메시지가 나오면 모든 준비가 끝났습니다.
