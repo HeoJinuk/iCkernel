@@ -30,7 +30,7 @@ def main():
             replace=True
         )
 
-    print(f"✅ Interactive C Kernel 설치 완료! (위치: {dest_dir})")
+    print(f"✅ Interactive C Kernel installed successfully! (Path: {dest_dir})")
 
 if __name__ == '__main__':
     main()

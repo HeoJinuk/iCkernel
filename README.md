@@ -86,7 +86,7 @@ pip install .
 install-ic-kernel
 ```
 
-When you see the message "✅ Interactive C Kernel 설치 완료! (Installation Complete)", you are ready.
+When you see the message "✅ Interactive C Kernel installed successfully!", you are ready.
 
 ---
 
