@@ -151,10 +151,10 @@ class InputServer:
 
 class SimpleCKernel(Kernel):
     implementation = 'SimpleCKernel'
-    implementation_version = '2.0'
+    implementation_version = '2.1'
     language = 'c'
     language_version = 'C11'
-    banner = "Simple C Kernel v2.0"
+    banner = "Simple C Kernel v2.1"
     language_info = {'name': 'c', 'mimetype': 'text/x-csrc', 'file_extension': '.c'}
 
     def __init__(self, **kwargs):
@@ -164,9 +164,45 @@ class SimpleCKernel(Kernel):
         self.current_process = None
         self.is_windows = (platform.system() == 'Windows')
 
+        self.safe_base_dir = self._ensure_safe_dir()
+
+    def _ensure_safe_dir(self):
+        """
+        플랫폼(OS)에 따라 한글 이슈가 없는 안전한 경로를 선택합니다.
+        """
+        target_dir = ""
+
+        if self.is_windows:
+            # === Windows 전용 로직 (한글 사용자명 회피) ===
+            # 1순위: 공용 문서 (C:\Users\Public\...)
+            public_path = os.environ.get('PUBLIC', r'C:\Users\Public')
+            target_dir = os.path.join(public_path, 'ic_workspace')
+            
+            # 폴더 생성 시도
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+            except:
+                # 실패 시 2순위: C드라이브 직속 Temp
+                target_dir = r'C:\ic_temp'
+                try: os.makedirs(target_dir, exist_ok=True)
+                except: target_dir = tempfile.gettempdir() # 최후의 수단
+                
+        else:
+            # === macOS / Linux 로직 ===
+            # 유닉스 계열은 /tmp 가 가장 안전하고 빠름 (RAM 디스크인 경우도 많음)
+            # 보통 /tmp 혹은 /var/tmp
+            base = os.environ.get('TMPDIR', '/tmp')
+            target_dir = os.path.join(base, 'ic_workspace')
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+            except:
+                target_dir = tempfile.gettempdir()
+
+        return target_dir
+
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=True):
         self.cell_output_buffer = ""
-        self.build_dir = tempfile.mkdtemp()
+        self.build_dir = tempfile.mkdtemp(dir=self.safe_base_dir)
 
         exe_name = 'source.exe' if self.is_windows else 'source'
         src_file = os.path.join(self.build_dir, 'source.c')
@@ -203,17 +239,26 @@ class SimpleCKernel(Kernel):
             f.write(full_code)
 
         try:
-            cmd = ['gcc', src_file, '-o', exe_file, '-fexec-charset=UTF-8'] + extra_args
-            # cwd(현재 작업 경로)를 임시 폴더로 지정하여 컴파일
+            src_name = os.path.basename(src_file)
+            exe_name = os.path.basename(exe_file)
+            cmd = ['gcc', src_name, '-o', exe_name, '-fexec-charset=UTF-8'] + extra_args
+
+            # 환경 변수 변경 (모든 OS 호환)
+            env = os.environ.copy()
+            env['TEMP'] = self.build_dir # Windows 표준
+            env['TMP'] = self.build_dir # Windows 표준
+            env['TMPDIR'] = self.build_dir # macOS/Linux 표준
+
             subprocess.check_output(
                 cmd,
                 stderr=subprocess.STDOUT, 
-                encoding='utf-8',
-                cwd=self.build_dir 
+                cwd=self.build_dir,
+                env=env
             )
             return True
         except subprocess.CalledProcessError as e:
-            colored_error = self._colorize_gcc_output(e.output)
+            output_str = e.output.decode('utf-8', errors='replace')
+            colored_error = self._colorize_gcc_output(output_str)
             self._print_stream(colored_error)
             return False
         except FileNotFoundError:
@@ -229,9 +274,25 @@ class SimpleCKernel(Kernel):
 
     def _run_process(self, exe_file):
         if not os.path.exists(exe_file): return
+        # 실행 권한 부여 (macOS/Linux 필수)
+        if not self.is_windows:
+            try:
+                st = os.stat(exe_file)
+                os.chmod(exe_file, st.st_mode | 0o111)
+            except: pass
 
+        # 환경 변수 설정
+        env = os.environ.copy()
+        env['TEMP'] = self.build_dir
+        env['TMP'] = self.build_dir
+        env['TMPDIR'] = self.build_dir
+
+        # 실행 명령어 구성
+        run_cmd = [exe_file]
+        if not self.is_windows and not exe_file.startswith('./') and not exe_file.startswith('/'):
+            run_cmd = ['./' + os.path.basename(exe_file)]
         self.current_process = subprocess.Popen(
-            [exe_file],
+            run_cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -239,7 +300,8 @@ class SimpleCKernel(Kernel):
             encoding='utf-8',
             errors='replace',
             bufsize=0,
-            cwd=self.build_dir
+            cwd=self.build_dir,
+            env=env
         )
         
         q = queue.Queue()
@@ -247,7 +309,7 @@ class SimpleCKernel(Kernel):
             while True:
                 try:
                     char = proc.stdout.read(1)
-                except ValueError: break 
+                except (ValueError, OSError): break
                 
                 if not char: break
                 out_q.put(char)
